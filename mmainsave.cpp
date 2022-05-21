@@ -1,13 +1,13 @@
 #include <Arduino.h>
 #include <limits.h>
-// #include <EEPROM.h>
-//#include <PinChangeInterrupt.h>
+#include <EEPROM.h>
+#include <PinChangeInterrupt.h>
 
-// #include <avr/sleep.h>
-// #include <avr/power.h>
-// #include <avr/wdt.h>
+#include <avr/sleep.h>
+#include <avr/power.h>
+#include <avr/wdt.h>
 #include "main.h"
-//#include "bq769x0.h"
+#include "bq769x0.h"
 
 
 M365BMS g_M365BMS;
@@ -15,7 +15,7 @@ BMSSettings g_Settings;
 
 bool g_Debug = true;
 // I2CAddress = 0x08, crcEnabled = true
-//bq769x0 g_BMS(bq76940, 0x08, true);
+bq769x0 g_BMS(bq76940, 0x08, true);
 volatile bool g_interruptFlag = false;
 unsigned long g_lastActivity = 0;
 unsigned long g_lastUpdate = 0;
@@ -33,7 +33,7 @@ volatile unsigned int g_timer2Overflows = 0;
 
 void alertISR()
 {
-    //g_BMS.setAlertInterruptFlag();
+    g_BMS.setAlertInterruptFlag();
     g_interruptFlag = true;
     g_wakeupFlag = true;
 }
@@ -60,15 +60,16 @@ ISR(TIMER2_OVF_vect)
 
 void setup()
 {
-    Serial.begin(115200);
+    Serial.begin(76800);
     Serial.println(F("BOOTED!"));
     delay(1000);
+#
 }
 
 void onNinebotMessage(NinebotMessage &msg)
 {
     // Enable TX
-    //UCSR0B |= (1 << TXEN0);
+    UCSR0B |= (1 << TXEN0);
 
     if(msg.addr != M365BMS_RADDR)
         return;
@@ -89,22 +90,10 @@ void onNinebotMessage(NinebotMessage &msg)
 
         if(msg.mode == 0x01)
         {
-            if((ofs + sz) > sizeof(g_M365BMS)){
+            if((ofs + sz) > sizeof(g_M365BMS))
                 return;
-            }   
-            Serial.print("date : ");
-            Serial.println(g_M365BMS.date);
-            
-            Serial.println("before memcpy");
-            for(int i=0;i<=253;i++){
-                Serial.print(msg.data[i],HEX);
-            }
+
             memcpy(&msg.data, &((uint8_t *)&g_M365BMS)[ofs], sz);
-            Serial.println("after memcpy");
-            for(int i=0;i<=253;i++){
-                Serial.print(msg.data[i],HEX);
-            }
-            
         }
         else if(msg.mode == 0xF1)
         {
@@ -156,30 +145,21 @@ void ninebotSend(NinebotMessage &msg)
     Serial.write(msg.addr);
     Serial.write(msg.mode);
     Serial.write(msg.offset);
-    Serial.println("SEND BEGIN");
-    Serial.println(msg.header[0],HEX);
-    Serial.println(msg.header[1],HEX);
-    Serial.println(msg.length,HEX);
-    Serial.println(msg.addr,HEX);
-    Serial.println(msg.mode,HEX);
-    Serial.println(msg.offset),HEX;
-    Serial.println("SEND ENDS");
+    Serial.println(msg.header[0]);
+    Serial.println(msg.header[1]);
+    Serial.println(msg.length);
+    Serial.println(msg.addr);
+    Serial.println(msg.mode);
+    Serial.println(msg.offset);
     for(uint8_t i = 0; i < msg.length - 2; i++)
     {
         Serial.write(msg.data[i]);
         msg.checksum += msg.data[i];
-        
-        Serial.print("MSG SENT : ");
-        Serial.print(msg.data[i],HEX);
-        Serial.println();
     }
 
     msg.checksum ^= 0xFFFF;
-    Serial.println("CHECKSUM :");
     Serial.write(msg.checksum & 0xFF);
     Serial.write((msg.checksum >> 8) & 0xFF);
-    Serial.println(msg.checksum & 0xFF,HEX);
-    Serial.println((msg.checksum >> 8) & 0xFF,HEX);
 }
 
 void ninebotRecv()
@@ -200,7 +180,8 @@ void ninebotRecv()
 
         uint8_t byte = Serial.read();
         recvd++;
-        // Serial.println(byte,HEX);
+        Serial.print("received: ");
+        Serial.println(byte,HEX);
         
         switch(recvd)
         {
@@ -209,8 +190,9 @@ void ninebotRecv()
                 if(byte != 0x55)
                 { // header1 mismatch
                     recvd = 0;
-                    Serial.print("header1 mismatch :");
-                    Serial.println(byte,HEX);
+                    // Serial.println("header1 mismatch ");
+                    // Serial.print("header: ");
+                    // Serial.println(byte,HEX);
                     break;
                    
                 }
@@ -224,7 +206,7 @@ void ninebotRecv()
                 if(byte != 0xAA)
                 { // header2 mismatch
                     recvd = 0;
-                    Serial.print("header2 mismatch :");
+                    Serial.print("header2 mismatch ");
                     Serial.println(byte,HEX);
                     break;
                     
@@ -265,7 +247,7 @@ void ninebotRecv()
                 msg.mode = byte;
                 checksum += byte;
                 Serial.print("mode: ");
-                Serial.println(msg.mode,HEX);
+                Serial.println(byte);
             } break;
 
             case 6: // offset
@@ -273,7 +255,7 @@ void ninebotRecv()
                 msg.offset = byte;
                 checksum += byte;
                 Serial.print("offset: ");
-                Serial.println(msg.offset, HEX);
+                Serial.println(byte);
             } break;
 
             default:
@@ -282,14 +264,14 @@ void ninebotRecv()
                 { // data
                     msg.data[recvd - 7] = byte;
                     checksum += byte;
-                    // Serial.print("data: ");
-                    // Serial.println(byte,HEX);
+                    Serial.print("data: ");
+                    Serial.println(byte);
                 }
                 else if(recvd - 7 - msg.length + 2 == 0)
                 { // checksum LSB
                     msg.checksum = byte;
-                    // Serial.print("checksum: ");
-                    // Serial.println(byte);
+                    Serial.print("checksum: ");
+                    Serial.println(byte);
                 }
                 else
                 { // checksum MSB and transmission finished
@@ -302,12 +284,7 @@ void ninebotRecv()
                         break;
                         Serial.println("invalid checksum");
                     }
-                    
-                  
-                    for(int i = 0 ;i <= 253; i++){
-                        Serial.print(msg.data[i],HEX);
-                    }
-                    
+
                     onNinebotMessage(msg);
                     recvd = 0;
                 }
@@ -320,10 +297,6 @@ void ninebotRecv()
 void loop()
 {
   ninebotRecv();
-//   uint8_t byte = Serial.read();
-//   if (byte != 0xFF){
-//      Serial.println(byte,HEX);
-//   }
 }
 
 #if BQ769X0_DEBUG

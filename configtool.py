@@ -1,4 +1,3 @@
-#!/usr/bin/python
 import serial
 import time
 import threading
@@ -8,7 +7,7 @@ from binascii import hexlify
 import cstruct
 
 g_Running = True
-COMPORT = sys.argv[1] if len(sys.argv) > 1 else '/dev/ttyUSB0'
+COMPORT = sys.argv[1] if len(sys.argv) > 1 else "/dev/ttyUSB0"
 ser = serial.Serial(COMPORT, 76800)
 
 cstruct.typedef("uint8", "uint8_t")
@@ -17,6 +16,7 @@ cstruct.typedef("uint16", "uint16_t")
 cstruct.typedef("int16", "int16_t")
 cstruct.typedef("uint32", "uint32_t")
 cstruct.typedef("int32", "int32_t")
+
 
 class M365BMS(cstruct.CStruct):
     __byte_order__ = cstruct.LITTLE_ENDIAN
@@ -49,6 +49,7 @@ class M365BMS(cstruct.CStruct):
         /*9E-A1*/   uint16_t unk7[2] = {0};
     """
 
+
 class BMSSettings(cstruct.CStruct):
     __byte_order__ = cstruct.LITTLE_ENDIAN
     __struct__ = """
@@ -61,53 +62,40 @@ class BMSSettings(cstruct.CStruct):
         uint16_t num_cycles = 0;
         uint16_t num_charged = 0;
         uint16_t date = (18 << 9) | (10 << 5) | 1; // MSB (7 bits year, 4 bits month, 5 bits day) LSB
-
         // setShuntResistorValue
         uint16_t shuntResistor_uOhm = 1000;
-
         // setThermistorBetaValue
         uint16_t thermistor_BetaK = 3435;
-
         // setTemperatureLimits
         int16_t temp_minDischargeC = -20; // °C
         int16_t temp_maxDischargeC = 60; // °C
         int16_t temp_minChargeC = 0; // °C
         int16_t temp_maxChargeC = 45; // °C
-
         // setShortCircuitProtection
         uint32_t SCD_current = 80000; // mA
         uint16_t SCD_delay = 200; // us
-
         // setOvercurrentChargeProtection
         uint32_t OCD_current = 6000; // mA
         uint16_t OCD_delay = 3000; // ms
-
         // setOvercurrentDischargeProtection
         uint32_t ODP_current = 40000; // mA
         uint16_t ODP_delay = 1280; // ms
-
         // setCellUndervoltageProtection
         uint16_t UVP_voltage = 2800; // mV
         uint16_t UVP_delay = 2; // s
-
         // setCellOvervoltageProtection
         uint16_t OVP_voltage = 4200; // mV
         uint16_t OVP_delay = 2; // s
-
         // setBalancingThresholds
         uint16_t balance_minIdleTime = 1800; // s
         uint16_t balance_minVoltage = 3600; // mV
         uint16_t balance_maxVoltageDiff = 10; // mV
-
         // setIdleCurrentThreshold
         uint16_t idle_currentThres = 500; // mA
-
         // enableAutoBalancing
         uint16_t balance_enabled = 1;
-
         // adjADCPackOffset
         int16_t adcPackOffset = 0;
-
         // adjADCCellsOffset
         int16_t adcCellsOffset[15] = {0};
     """
@@ -118,68 +106,72 @@ g_M365BMS = M365BMS()
 
 g_Queue = Queue(maxsize=1)
 
+
 class RecvThread(threading.Thread):
     def run(self):
         while g_Running:
-            msg = {'header': bytes(), 'data': bytes()}
+            msg = {"header": bytes(), "data": bytes()}
             recvd = 0
             chk = 0
 
             while g_Running:
                 b = ser.read()
-                bi = int.from_bytes(b, 'little')
+                bi = int.from_bytes(b, "little")
                 recvd += 1
 
                 if recvd == 1:
                     if bi != 0x55:
-                        sys.stdout.write(b.decode('ascii', 'replace'))
+                        sys.stdout.write(b.decode("ascii", "replace"))
                         break
-                    msg['header'] += b
+                    msg["header"] += b
 
                 elif recvd == 2:
                     if bi != 0xAA:
                         break
-                    msg['header'] += b
+                    msg["header"] += b
 
                 elif recvd == 3:
-                    msg['len'] = bi
+                    msg["len"] = bi
                     chk = bi
 
                 elif recvd == 4:
-                    msg['addr'] = b
+                    msg["addr"] = b
                     chk += bi
 
                 elif recvd == 5:
                     if bi == 0x65 or bi == 0x64:
                         break
-                    msg['mode'] = b
+                    msg["mode"] = b
                     chk += bi
 
                 elif recvd == 6:
-                    msg['ofs'] = bi
+                    msg["ofs"] = bi
                     chk += bi
 
                 else:
-                    if recvd - 7 < msg['len'] - 2:
-                        msg['data'] += b
+                    if recvd - 7 < msg["len"] - 2:
+                        msg["data"] += b
                         chk += bi
-                    elif recvd - 7 - msg['len'] + 2 == 0:
-                        msg['chk'] = bi
+                    elif recvd - 7 - msg["len"] + 2 == 0:
+                        msg["chk"] = bi
                     else:
-                        msg['chk'] |= bi << 8
+                        msg["chk"] |= bi << 8
                         chk ^= 0xFFFF
 
-                        if chk != msg['chk']:
-                            print('!!! checksum: {:02X} != {:02X}'.format(msg['chk'], chk))
+                        if chk != msg["chk"]:
+                            print(
+                                "!!! checksum: {:02X} != {:02X}".format(msg["chk"], chk)
+                            )
                             break
 
                         g_Queue.put(msg, False)
 
                         break
 
+
 def m365_send(length, addr, mode, offset, data):
     for i in range(5):
-        ser.write(0xFF) # Wake
+        ser.write(0xFF)  # Wake
         time.sleep(0.01)
 
     arg = [length, addr, mode, offset]
@@ -195,6 +187,7 @@ def m365_send(length, addr, mode, offset, data):
     print(hexlify(send))
     ser.write(send)
 
+
 def m365_recv():
     d = g_Queue.get(True, 1)
     g_Queue.task_done()
@@ -209,16 +202,19 @@ def m365_recv():
 def getSettings():
     m365_send(3, 0x22, 0xF1, 0, [len(g_Settings)])
     d = m365_recv()
-    g_Settings.unpack(d['data'])
+    g_Settings.unpack(d["data"])
+
 
 # g_Settings -> BMS Settings
 def putSettings():
     d = g_Settings.pack()
     m365_send(2 + len(g_Settings), 0x22, 0xF3, 0, list(d))
 
+
 # apply (new) BMS settings
 def applySettings():
     m365_send(3, 0x22, 0xFA, 1, [0])
+
 
 # save BMS settings to EEPROM
 def saveSettings():
@@ -229,7 +225,8 @@ def saveSettings():
 def getM365BMS():
     m365_send(3, 0x22, 0x01, 0, [len(g_M365BMS)])
     d = m365_recv()
-    g_M365BMS.unpack(d['data'])
+    g_M365BMS.unpack(d["data"])
+
 
 # g_M365 -> BMS M365
 def putM365BMS():
@@ -242,6 +239,7 @@ def debug(enable):
     on = 1 if enable else 0
     m365_send(3, 0x22, 0xFA, 4, [on])
 
+
 # call debug_print() on BMS
 def debug_print():
     m365_send(3, 0x22, 0xFA, 5, [0])
@@ -251,30 +249,36 @@ def debug_print():
 def disable():
     m365_send(3, 0x22, 0xFA, 6, [0])
 
+
 # DISCHG & CHG FET ON
 def enable():
     m365_send(3, 0x22, 0xFA, 7, [0])
+
 
 # Bluetooth power OFF
 def blue_off():
     m365_send(3, 0x22, 0xFA, 8, [0])
 
+
 # Bluetooth power ON
 def blue_on():
     m365_send(3, 0x22, 0xFA, 9, [0])
+
 
 # Hangs the BMS software and relies on watchdog to rest it
 def watchdog_test():
     m365_send(3, 0x22, 0xFA, 10, [0])
 
+
 # Reboots to bootloader
 def bootloader():
     m365_send(3, 0x22, 0xFA, 11, [0])
 
+
 # YOU HAVE TO INSERT THE EMPTY (0) SLOTS YOURSELF !!!
 def calc_cellofs(measured):
     getM365BMS()
-    bms = g_M365BMS.cell_voltages[:len(measured)]
+    bms = g_M365BMS.cell_voltages[: len(measured)]
     ofs = []
     for i, a in enumerate(measured):
         a *= 1000
